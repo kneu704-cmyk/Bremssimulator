@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Brems-Minispiel</title>
+  <style>
+    :root{
+      --bg:#eef3f8; --card:#ffffff; --text:#1f2937; --muted:#6b7280;
+      --road:#4b5563; --lane:#ffffff; --player:#2563eb; --lead:#9ca3af;
+      --log:#8b5a2b;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--text)}
+    .wrap{max-width:1100px;margin:0 auto;padding:18px}
+    h1{margin:0 0 8px;font-size:30px}
+    .sub{margin:0 0 16px;color:var(--muted);line-height:1.45}
+    .grid{display:grid;grid-template-columns:1.3fr .8fr;gap:16px}
+    .card{background:var(--card);border-radius:20px;box-shadow:0 10px 30px rgba(15,23,42,.12);padding:16px}
+    .controls{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+    .panel{background:#f8fafc;border-radius:16px;padding:14px}
+    label{display:block;font-weight:700;margin-bottom:8px}
+    input[type="range"]{width:100%;accent-color:#2563eb}
+    .small{font-size:14px;color:var(--muted);line-height:1.45}
+    .row{display:flex;gap:8px;flex-wrap:wrap}
+    button{border:0;border-radius:14px;padding:12px 14px;font-size:15px;cursor:pointer;background:#e5e7eb;min-height:46px}
+    button.primary{background:#2563eb;color:#fff}
+    button.danger{background:#dc2626;color:#fff}
+    button.active{outline:3px solid rgba(37,99,235,.18)}
+    .track-card{border:1px solid #dbe3f0;border-radius:22px;padding:14px;background:#fff}
+    .track-header{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;font-size:14px;color:var(--muted);margin-bottom:10px}
+    .playbar{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px}
+    .progress{height:12px;background:#e5e7eb;border-radius:999px;overflow:hidden;margin-bottom:12px}
+    .progress-bar{height:100%;width:0;background:#2563eb}
+    .scene{position:relative;overflow:hidden;height:270px;border-radius:22px;border:2px solid #cbd5e1;background:linear-gradient(#cfe8ff,#eef6ff)}
+    .bg{position:absolute;inset:0;z-index:0}
+    .hill{position:absolute;bottom:100px;width:220px;height:70px;background:#b7e0a5;border-radius:50%}
+    .tree{position:absolute;bottom:104px;width:24px;height:72px}
+    .tree .trunk{position:absolute;left:9px;bottom:0;width:6px;height:26px;background:#7c4a21}
+    .tree .crown{position:absolute;left:0;bottom:16px;width:24px;height:40px;background:#2f9e44;border-radius:50%}
+    .road{position:absolute;left:0;right:0;bottom:0;height:100px;background:var(--road);z-index:1}
+    .lane{position:absolute;left:0;right:0;bottom:50px;border-top:5px dashed var(--lane);z-index:2}
+    .car,.lead{
+      position:absolute;bottom:66px;width:60px;height:28px;border-radius:10px;
+      border:2px solid rgba(255,255,255,.6);z-index:6;box-shadow:0 10px 20px rgba(15,23,42,.22);
+    }
+    .car{background:var(--player)}
+    .lead{background:var(--lead);z-index:5}
+    .car::before,.car::after,.lead::before,.lead::after{
+      content:"";position:absolute;width:14px;height:14px;border-radius:50%;background:#111827;bottom:-7px;
+    }
+    .car::before,.lead::before{left:8px}
+    .car::after,.lead::after{right:8px}
+    .log{
+      position:absolute;bottom:74px;width:120px;height:22px;border-radius:12px;
+      background:linear-gradient(90deg,#8b5a2b,#6b4423);border:2px solid rgba(255,255,255,.35);
+      display:none;z-index:4;
+    }
+    .status{background:#111827;color:#fff;border-radius:16px;padding:14px;min-height:76px;line-height:1.5}
+    .stats{display:grid;gap:12px}
+    .stat-box{background:#f8fafc;border-radius:16px;padding:14px;line-height:1.7}
+    .live{display:flex;justify-content:space-between;gap:10px;background:#f8fafc;border-radius:16px;padding:14px;margin-bottom:8px}
+    .physics-results{margin-top:12px;padding-top:12px;border-top:1px solid #d7e3f6;display:none}
+    .physics-row{display:flex;justify-content:space-between;gap:10px;padding:5px 0}
+    @media (max-width:900px){.grid,.controls{grid-template-columns:1fr}.wrap{padding:12px}h1{font-size:26px}.scene{height:240px}}
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Brems-Minispiel</h1>
+  <p class="sub">Das graue Auto ist immer sichtbar. Nach 7 bis 12 Sekunden erscheint ein Baumstamm auf der Straße. Das graue Auto fährt hinein – danach läuft dein Auto weiter, bis du selbst bremst.</p>
+
+  <div class="grid">
+    <div class="card">
+      <div class="controls">
+        <div class="panel">
+          <label for="speedRange">Geschwindigkeit: <span id="speedLabel">140</span> km/h</label>
+          <input id="speedRange" type="range" min="20" max="250" step="5" value="140">
+          <div class="small">Beide Autos fahren anfangs gleich schnell. Einstellbar bis 250 km/h.</div>
+        </div>
+        <div class="panel">
+          <label>Straßenverhältnisse</label>
+          <div class="row">
+            <button class="surfaceBtn active" data-surface="dry">Trocken</button>
+            <button class="surfaceBtn" data-surface="wet">Nass</button>
+            <button class="surfaceBtn" data-surface="snow">Schnee</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <div class="panel">
+          <label for="gapRange">Sicherheitsabstand: <span id="gapLabel">160</span> m</label>
+          <input id="gapRange" type="range" min="10" max="400" step="5" value="160">
+          <div class="small">Abstand zum grauen Auto. Einstellbar bis 400 m.</div>
+        </div>
+        <div class="panel">
+          <label>Streckendaten</label>
+          <div class="small">Gesamtstrecke: <strong>3 km</strong></div>
+          <div class="small">Baum erscheint nach: <strong>7–12 s</strong></div>
+          <div class="small">Beim Bremsen bleibt die Szene stehen.</div>
+        </div>
+      </div>
+
+      <div class="track-card">
+        <div class="track-header">
+          <span>3 km Strecke, Sichtfenster mit fixer Kameraperspektive</span>
+          <span>Aktuelle Geschwindigkeit: <strong id="currentSpeed">140.0 km/h</strong></span>
+        </div>
+
+        <div class="playbar">
+          <button id="startBtn" class="primary">Start</button>
+          <button id="brakeBtn" class="danger">Bremsen</button>
+          <button id="resetBtn">Reset</button>
+        </div>
+
+        <div class="progress"><div id="progressBar" class="progress-bar"></div></div>
+
+        <div class="scene">
+          <div class="bg" id="bg"></div>
+          <div class="road"></div>
+          <div class="lane"></div>
+          <div class="log" id="log"></div>
+          <div class="lead" id="leadCar"></div>
+          <div class="car" id="playerCar"></div>
+        </div>
+      </div>
+
+      <div class="status" id="statusBox">Stelle Geschwindigkeit und Abstand ein und drücke Start.</div>
+    </div>
+
+    <div class="stats">
+      <div class="card">
+        <h3>Bremsphysik</h3>
+        <div class="stat-box">
+          <div>Straße: <strong id="surfaceLabel">Trocken</strong></div>
+          <div>Verzögerung: <strong id="decelLabel">9.65 m/s²</strong></div>
+          <div>Haftung: <strong id="gripLabel">gute Haftung</strong></div>
+          <div>Bremsweg: <strong id="brakingDistance">??? m</strong></div>
+
+          <div class="physics-results" id="physicsResults">
+            <div class="physics-row"><span>Geschwindigkeit</span><strong id="resultSpeed">–</strong></div>
+            <div class="physics-row"><span>Reaktionszeit</span><strong id="resultReactionTime">–</strong></div>
+            <div class="physics-row"><span>Reaktionsweg</span><strong id="resultReactionDistance">–</strong></div>
+            <div class="physics-row"><span>Bremsweg</span><strong id="resultBrakingDistance">–</strong></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Live-Daten</h3>
+        <div class="live"><span>Zeit</span><strong id="timeLive">0.00 s</strong></div>
+        <div class="live"><span>Deine Geschwindigkeit</span><strong id="speedLive">140.0 km/h</strong></div>
+        <div class="live"><span>Abstand zum Vorderwagen</span><strong id="distanceLeadLive">160.0 m</strong></div>
+        <div class="live"><span>Restreserve</span><strong id="bestMargin">–</strong></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const PX_PER_METER = 1.25;
+const PLAYER_X = 120;
+const PLAYER_W = 60;
+const TRACK_M = 3000;
+
+function kmhToMs(kmh){ return kmh/3.6; }
+function msToKmh(ms){ return ms*3.6; }
+function formatMeters(v){ return v.toFixed(1)+' m'; }
+function formatSeconds(v){ return v.toFixed(2)+' s'; }
+
+const BRAKE = {
+  dry:{label:'Trocken',decel:9.65,grip:'gute Haftung'},
+  wet:{label:'Nass',decel:6.43,grip:'reduzierte Haftung'},
+  snow:{label:'Schnee',decel:3.86,grip:'geringe Haftung'}
+};
+
+const state = {
+  speedKmh:140,
+  gapM:160,
+  surface:'dry',
+  running:false,
+  phase:'idle',
+  time:0,
+  eventTime:9,
+  bgScroll:0,
+  trackProgressM:0,
+  playerVelocity:kmhToMs(140),
+  playerOffset:0,
+  leadX:320,
+  logX:520,
+  logVisible:false,
+  bestMargin:null,
+  lastTs:null,
+  raf:null,
+  eventStartSpeedMs: kmhToMs(140),
+  signalTime: null,
+  brakePressTime: null,
+  brakingStartDistancePx: null,
+  finalBrakingDistanceM: null
+};
+
+const bg = document.getElementById('bg');
+const playerCar = document.getElementById('playerCar');
+const leadCar = document.getElementById('leadCar');
+const logEl = document.getElementById('log');
+const statusBox = document.getElementById('statusBox');
+const progressBar = document.getElementById('progressBar');
+const speedRange = document.getElementById('speedRange');
+const gapRange = document.getElementById('gapRange');
+const speedLabel = document.getElementById('speedLabel');
+const gapLabel = document.getElementById('gapLabel');
+const brakingDistanceEl = document.getElementById('brakingDistance');
+const currentSpeedEl = document.getElementById('currentSpeed');
+const timeLive = document.getElementById('timeLive');
+const speedLive = document.getElementById('speedLive');
+const distanceLeadLive = document.getElementById('distanceLeadLive');
+const bestMarginEl = document.getElementById('bestMargin');
+const surfaceLabel = document.getElementById('surfaceLabel');
+const decelLabel = document.getElementById('decelLabel');
+const gripLabel = document.getElementById('gripLabel');
+const startBtn = document.getElementById('startBtn');
+const brakeBtn = document.getElementById('brakeBtn');
+const resetBtn = document.getElementById('resetBtn');
+const physicsResults = document.getElementById('physicsResults');
+const resultSpeed = document.getElementById('resultSpeed');
+const resultReactionTime = document.getElementById('resultReactionTime');
+const resultReactionDistance = document.getElementById('resultReactionDistance');
+const resultBrakingDistance = document.getElementById('resultBrakingDistance');
+
+function buildBg(){
+  bg.innerHTML='';
+  for(let i=0;i<24;i++){
+    const hill=document.createElement('div');
+    hill.className='hill';
+    hill.style.left=(i*170-40)+'px';
+    bg.appendChild(hill);
+  }
+  for(let i=0;i<60;i++){
+    const tree=document.createElement('div');
+    tree.className='tree';
+    tree.style.left=(50+i*65)+'px';
+    tree.innerHTML='<div class="crown"></div><div class="trunk"></div>';
+    bg.appendChild(tree);
+  }
+}
+
+function getBrakeProfile() {
+  return BRAKE[state.surface];
+}
+
+function updateTheory(){
+  const p = getBrakeProfile();
+  const v = kmhToMs(state.speedKmh);
+  const brakeDist = (v*v)/(2*p.decel);
+
+  speedLabel.textContent = state.speedKmh;
+  gapLabel.textContent = state.gapM;
+  brakingDistanceEl.textContent = formatMeters(brakeDist);
+  surfaceLabel.textContent = p.label;
+  decelLabel.textContent = p.decel.toFixed(1)+' m/s²';
+  gripLabel.textContent = p.grip;
+
+  if(!state.running){
+    state.playerVelocity = v;
+    currentSpeedEl.textContent = state.speedKmh.toFixed(1)+' km/h';
+    speedLive.textContent = state.speedKmh.toFixed(1)+' km/h';
+  }
+}
+
+function setStatus(text){ statusBox.textContent=text; }
+
+function layoutScene(){
+  state.leadX = PLAYER_X + Math.min(320, state.gapM * PX_PER_METER);
+  state.logX = Math.min(620, state.leadX + 130);
+}
+
+function hideResults(){
+  physicsResults.style.display = 'none';
+  resultSpeed.textContent = '–';
+  resultReactionTime.textContent = '–';
+  resultReactionDistance.textContent = '–';
+  resultBrakingDistance.textContent = '–';
+}
+
+function showResults(){
+  const p = getBrakeProfile();
+  const reactionTime = state.brakePressTime != null && state.signalTime != null
+    ? Math.max(0, state.brakePressTime - state.signalTime)
+    : 0;
+  const reactionDistance = state.eventStartSpeedMs * reactionTime;
+  const brakingDistance = state.finalBrakingDistanceM != null
+    ? state.finalBrakingDistanceM
+    : ((state.eventStartSpeedMs * state.eventStartSpeedMs) / (2 * p.decel));
+
+  resultSpeed.textContent = msToKmh(state.eventStartSpeedMs).toFixed(1) + ' km/h';
+  resultReactionTime.textContent = formatSeconds(reactionTime);
+  resultReactionDistance.textContent = formatMeters(reactionDistance);
+  resultBrakingDistance.textContent = formatMeters(brakingDistance);
+  physicsResults.style.display = 'block';
+}
+
+function resetGame(){
+  cancelAnimationFrame(state.raf);
+  state.running=false;
+  state.phase='idle';
+  state.time=0;
+  state.eventTime=7 + Math.random()*5;
+  state.bgScroll=0;
+  state.trackProgressM=0;
+  state.playerVelocity=kmhToMs(state.speedKmh);
+  state.playerOffset=0;
+  state.logVisible=false;
+  state.bestMargin=null;
+  state.lastTs=null;
+  state.eventStartSpeedMs = kmhToMs(state.speedKmh);
+  state.signalTime = null;
+  state.brakePressTime = null;
+  state.brakingStartDistancePx = null;
+  state.finalBrakingDistanceM = null;
+  layoutScene();
+  hideResults();
+  setStatus('Stelle Geschwindigkeit und Abstand ein und drücke Start.');
+  startBtn.disabled=false;
+  speedRange.disabled=false;
+  gapRange.disabled=false;
+  document.querySelectorAll('.surfaceBtn').forEach(btn=>btn.disabled=false);
+  render();
+}
+
+function startGame(){
+  resetGame();
+  state.running=true;
+  state.phase='cruising';
+  setStatus('Beobachte das graue Auto. Wenn der Baum erscheint und es hinein fährt, musst du bremsen.');
+  startBtn.disabled=true;
+  speedRange.disabled=true;
+  gapRange.disabled=true;
+  document.querySelectorAll('.surfaceBtn').forEach(btn=>btn.disabled=true);
+  state.raf=requestAnimationFrame(loop);
+}
+
+function pressBrake(){
+  if(!state.running) return;
+  if(state.phase==='crashed' || state.phase==='braking'){
+    if(state.phase !== 'braking'){
+      state.brakePressTime = state.time;
+      state.brakingStartDistancePx = state.playerOffset;
+    }
+    state.phase='braking';
+  }
+}
+
+function finish(message){
+  state.running=false;
+  state.phase='finished';
+  cancelAnimationFrame(state.raf);
+  setStatus(message);
+  showResults();
+  startBtn.disabled=false;
+  speedRange.disabled=false;
+  gapRange.disabled=false;
+  document.querySelectorAll('.surfaceBtn').forEach(btn=>btn.disabled=false);
+  render();
+}
+
+function render(){
+  bg.style.transform=`translateX(${-state.bgScroll}px)`;
+  bg.style.width='4200px';
+  playerCar.style.left=(PLAYER_X + state.playerOffset)+'px';
+  leadCar.style.left=state.leadX+'px';
+  logEl.style.left=state.logX+'px';
+  logEl.style.display=state.logVisible ? 'block' : 'none';
+
+  currentSpeedEl.textContent=msToKmh(state.playerVelocity).toFixed(1)+' km/h';
+  timeLive.textContent=state.time.toFixed(2)+' s';
+  speedLive.textContent=msToKmh(state.playerVelocity).toFixed(1)+' km/h';
+  const gapPx = state.leadX - (PLAYER_X + state.playerOffset + PLAYER_W);
+  distanceLeadLive.textContent=formatMeters(gapPx / PX_PER_METER);
+  bestMarginEl.textContent=state.bestMargin==null ? '–' : formatMeters(state.bestMargin);
+  progressBar.style.width=Math.min(100,(state.trackProgressM/TRACK_M)*100)+'%';
+}
+
+function loop(ts){
+  if(!state.running) return;
+  if(state.lastTs==null){
+    state.lastTs=ts;
+    state.raf=requestAnimationFrame(loop);
+    return;
+  }
+  const dt=Math.min((ts-state.lastTs)/1000,0.03);
+  state.lastTs=ts;
+  state.time += dt;
+
+  const p = getBrakeProfile();
+
+  if(state.phase==='cruising'){
+    state.bgScroll += state.playerVelocity * 1.6 * dt;
+    state.trackProgressM += state.playerVelocity * dt;
+    if(state.time >= state.eventTime){
+      state.logVisible = true;
+      state.phase = 'signal';
+    }
+  } else if(state.phase==='signal'){
+    state.bgScroll += state.playerVelocity * 1.6 * dt;
+    state.trackProgressM += state.playerVelocity * dt;
+
+    const target = state.logX - 28;
+    state.leadX = Math.min(target, state.leadX + 115*dt);
+    if(state.leadX >= target){
+      state.leadX = target;
+      state.phase = 'crashed';
+      state.signalTime = state.time;
+      state.eventStartSpeedMs = state.playerVelocity;
+    }
+  } else if(state.phase==='crashed'){
+    state.playerOffset += state.playerVelocity * PX_PER_METER * dt;
+    state.trackProgressM += state.playerVelocity * dt;
+  } else if(state.phase==='braking'){
+    state.playerVelocity = Math.max(0, state.playerVelocity - p.decel*dt);
+    state.playerOffset += state.playerVelocity * PX_PER_METER * dt;
+    state.trackProgressM += state.playerVelocity * dt;
+  }
+
+  const playerFront = PLAYER_X + state.playerOffset + PLAYER_W;
+  const leadBack = state.leadX;
+  const logBack = state.logX;
+
+  if(state.logVisible && playerFront >= logBack && state.playerVelocity > 0){
+    state.playerOffset = logBack - PLAYER_X - PLAYER_W;
+    if(state.brakingStartDistancePx != null){
+      state.finalBrakingDistanceM = Math.max(0, (state.playerOffset - state.brakingStartDistancePx) / PX_PER_METER);
+    }
+    render();
+    finish('Crash! Du bist in den Baumstamm gefahren.');
+    return;
+  }
+
+  if(playerFront >= leadBack && state.playerVelocity > 0){
+    state.playerOffset = leadBack - PLAYER_X - PLAYER_W;
+    if(state.brakingStartDistancePx != null){
+      state.finalBrakingDistanceM = Math.max(0, (state.playerOffset - state.brakingStartDistancePx) / PX_PER_METER);
+    }
+    render();
+    finish('Crash! Du bist auf das vordere Auto aufgefahren.');
+    return;
+  }
+
+  if(state.phase==='braking' && state.playerVelocity <= 0){
+    if(state.brakingStartDistancePx != null){
+      state.finalBrakingDistanceM = Math.max(0, (state.playerOffset - state.brakingStartDistancePx) / PX_PER_METER);
+    }
+    const marginM = (leadBack - playerFront) / PX_PER_METER;
+    if(marginM > 0){
+      state.bestMargin = marginM;
+      render();
+      finish('Geschafft! Du bist rechtzeitig stehen geblieben.');
+    } else {
+      render();
+      finish('Zu spät gebremst.');
+    }
+    return;
+  }
+
+  if(state.trackProgressM >= TRACK_M){
+    render();
+    finish('3 km geschafft.');
+    return;
+  }
+
+  render();
+  state.raf=requestAnimationFrame(loop);
+}
+
+speedRange.addEventListener('input', e=>{ state.speedKmh=Number(e.target.value); updateTheory(); render(); });
+gapRange.addEventListener('input', e=>{ state.gapM=Number(e.target.value); layoutScene(); updateTheory(); render(); });
+document.querySelectorAll('.surfaceBtn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.surfaceBtn').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    state.surface=btn.dataset.surface;
+    updateTheory();
+    hideResults();
+  });
+});
+startBtn.addEventListener('click', startGame);
+brakeBtn.addEventListener('click', pressBrake);
+resetBtn.addEventListener('click', resetGame);
+window.addEventListener('keydown', e=>{
+  if(e.code==='Space'){ e.preventDefault(); pressBrake(); }
+  if(e.key.toLowerCase()==='r') resetGame();
+});
+
+buildBg();
+updateTheory();
+resetGame();
+</script>
+</body>
+</html>
